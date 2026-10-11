@@ -1,0 +1,17 @@
+.pio/
+.pio-core/
+.analysis/
+.vscode/
+artifacts/firmware-backup/
+artifacts/wifi-test-profile.xml
+artifacts/*.pcap
+artifacts/*.pcapng
+artifacts/*.log
+*.bin
+*.elf
+*.map
+.env
+.env.*
+secrets.*
+credentials.*
+
