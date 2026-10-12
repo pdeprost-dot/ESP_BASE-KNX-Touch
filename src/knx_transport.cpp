@@ -2,6 +2,8 @@
 
 #include <cstring>
 
+#include "udp_send_result.h"
+
 namespace {
 constexpr uint16_t kConnectRequest = 0x0205;
 constexpr uint16_t kConnectResponse = 0x0206;
@@ -63,7 +65,6 @@ const char* connectStatusName(uint8_t status) {
 void KNXTransport::begin(const Config& config, TelegramHandler handler) {
   config_ = config;
   handler_ = handler;
-  transmissionConsumed_ = false;
   const bool validIndividualAddress = config_.individualAddress != 0 &&
                                       (config_.individualAddress & 0x00FF) != 0;
   if (config_.applicationTransmitEnabled &&
@@ -75,7 +76,7 @@ void KNXTransport::begin(const Config& config, TelegramHandler handler) {
   Serial.printf("[KNX] mode=%s decoder_self_test=%s encoder_self_test=%s transmit=%s\n",
                 modeName(), runDecoderSelfTest() ? "PASS" : "FAIL",
                 runEncoderSelfTest() ? "PASS" : "FAIL",
-                config_.applicationTransmitEnabled ? "ONE_SHOT_ARMED" : "BLOCKED");
+                config_.applicationTransmitEnabled ? "ACTIVE" : "BLOCKED");
   if (!config_.enabled ||
       (config_.mode == KnxTransportMode::Tunneling &&
        static_cast<uint32_t>(config_.serverIp) == 0) ||
@@ -322,36 +323,42 @@ void KNXTransport::sendTunnelingAck(uint8_t channel, uint8_t sequence,
 }
 
 bool KNXTransport::sendPacket(const uint8_t* data, size_t length,
-                              IPAddress ip, uint16_t port) {
+                              IPAddress ip, uint16_t port,
+                              size_t* bytesWritten) {
+  if (bytesWritten) *bytesWritten = 0;
   const uint16_t service = static_cast<uint16_t>(data[2]) << 8 | data[3];
   if (service != kConnectRequest && service != kConnectionStateRequest &&
       service != kDisconnectRequest && service != kTunnelingAck &&
       !(service == kRoutingIndication && config_.mode == KnxTransportMode::Routing &&
-        config_.applicationTransmitEnabled && !transmissionConsumed_)) {
+        config_.applicationTransmitEnabled)) {
     Serial.printf("[KNX][SECURITY] blocked outbound service=0x%04X\n", service);
     return false;
   }
   if (!udp_.beginPacket(ip, port)) {
-    Serial.println("[KNX][ERROR] UDP beginPacket failed");
     return false;
   }
-  udp_.write(data, length);
-  if (!udp_.endPacket()) {
-    Serial.println("[KNX][ERROR] UDP endPacket failed");
+  const size_t written = udp_.write(data, length);
+  if (bytesWritten) *bytesWritten = written;
+  if (written != length) {
     return false;
   }
-  return true;
+  const bool endOk = udp_.endPacket() != 0;
+  return udpSendSucceeded(true, written, length, endOk);
 }
 
 bool KNXTransport::transmitAuthorized(uint16_t groupAddress, KnxApci apci) {
   if (config_.mode != KnxTransportMode::Routing ||
-      !config_.applicationTransmitEnabled || transmissionConsumed_) {
-    Serial.println("[KNX][SECURITY] application transmit blocked: not armed or already consumed");
+      !config_.applicationTransmitEnabled) {
+    Serial.println("[KNX][SECURITY] application transmit blocked: PASSIVE mode");
+    return false;
+  }
+  if (!applicationNetworkOperational()) {
+    Serial.println("[KNX][SECURITY] application transmit blocked: network/socket unavailable");
     return false;
   }
   if (config_.individualAddress == 0 ||
       (config_.individualAddress & 0x00FF) == 0 ||
-      groupAddress == 0 || groupAddress != config_.authorizedGroupAddress) {
+      groupAddress == 0 || !isAuthorizedWriteAddress(groupAddress)) {
     Serial.println("[KNX][SECURITY] application transmit blocked: address not authorized");
     return false;
   }
@@ -373,19 +380,60 @@ bool KNXTransport::sendRoutingGroup(uint16_t groupAddress, KnxApci apci, bool va
     Serial.println("[KNX][ERROR] outbound cEMI encoding failed");
     return false;
   }
-  if (!sendPacket(data, length, config_.multicastIp, config_.serverPort)) return false;
-  transmissionConsumed_ = true;
-  char source[16]{};
+  size_t written = 0;
+  const bool sent = sendPacket(data, length, config_.multicastIp,
+                               config_.serverPort, &written);
   char destination[16]{};
-  formatIndividualAddress(config_.individualAddress, source, sizeof(source));
   formatGroupAddress(groupAddress, destination, sizeof(destination));
-  Serial.printf("[KNX][TX] source=%s destination=%s apci=%s",
-                source, destination, apciName(apci));
-  if (apci == KnxApci::GroupValueWrite) {
-    Serial.printf(" dpt=1.001 value=%s", value ? "ON" : "OFF");
+  Serial.printf("[KNX][TX] destination=%s value=%s written=%u/%u udp=%s\n",
+                destination, value ? "ON" : "OFF",
+                static_cast<unsigned>(written), static_cast<unsigned>(length),
+                sent ? "OK" : "ERROR");
+  return sent;
+}
+
+bool KNXTransport::applicationNetworkOperational() const {
+  return config_.mode == KnxTransportMode::Routing &&
+         state_ == KnxTransportState::Connected && udpOpen_ &&
+         WiFi.status() == WL_CONNECTED &&
+         static_cast<uint32_t>(WiFi.localIP()) != 0;
+}
+
+bool KNXTransport::isAuthorizedWriteAddress(uint16_t groupAddress) const {
+  for (size_t index = 0; index < authorizedWriteAddressCount_; ++index) {
+    if (authorizedWriteAddresses_[index] == groupAddress) return true;
   }
-  Serial.println(" one_shot=consumed");
-  return true;
+  return false;
+}
+
+bool KNXTransport::setApplicationTransmitEnabled(
+    bool enabled, const uint16_t* addresses, size_t count) {
+  config_.applicationTransmitEnabled = false;
+  authorizedWriteAddressCount_ = 0;
+  memset(authorizedWriteAddresses_, 0, sizeof(authorizedWriteAddresses_));
+  if (!enabled) {
+    Serial.println("[KNX][SECURITY] runtime mode=PASSIVE");
+    return true;
+  }
+  if (!addresses || count == 0 || count > kMaxAuthorizedWrites ||
+      config_.individualAddress == 0 || (config_.individualAddress & 0xFF) == 0 ||
+      !config_.groupValueWriteAuthorized || config_.groupValueReadAuthorized) {
+    Serial.println("[KNX][SECURITY] ACTIVE rejected: invalid authorization policy");
+    return false;
+  }
+  for (size_t index = 0; index < count; ++index) {
+    if (addresses[index] == 0) return false;
+    bool duplicate = false;
+    for (size_t existing = 0; existing < authorizedWriteAddressCount_; ++existing) {
+      duplicate |= authorizedWriteAddresses_[existing] == addresses[index];
+    }
+    if (!duplicate) authorizedWriteAddresses_[authorizedWriteAddressCount_++] = addresses[index];
+  }
+  config_.applicationTransmitEnabled = authorizedWriteAddressCount_ > 0;
+  Serial.printf("[KNX][SECURITY] runtime mode=%s authorized_write_groups=%u\n",
+                config_.applicationTransmitEnabled ? "ACTIVE" : "PASSIVE",
+                static_cast<unsigned>(authorizedWriteAddressCount_));
+  return config_.applicationTransmitEnabled;
 }
 
 bool KNXTransport::sendGroupValueWriteDpt1(uint16_t groupAddress, bool value) {

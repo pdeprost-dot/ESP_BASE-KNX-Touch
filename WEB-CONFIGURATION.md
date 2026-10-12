@@ -13,20 +13,27 @@ Open the ESP_BASE web interface and select **KNX / Touches**.
 - **Routing multicast:** defaults to the KNX standard `224.0.23.12`.
 - **Feedback timeout:** defaults to 5000 ms.
 - **Synchronization:** passive; the ESP sends no `GroupValueRead`.
-- **Operating mode:** PASSIVE only.
+- **Operating mode:** PASSIVE or ACTIVE, selected explicitly from the page.
 
 Network-related changes are loaded on restart.
 
 ## Button settings
 
 Each of four buttons has a display name, command group address, status group
-address, and enabled flag. Addresses use KNX three-level notation. Duplicate
-command groups, duplicate status groups, identical command/status pairs, and
-out-of-range values are rejected.
+address, and enabled flag. Addresses use KNX three-level notation. Multiple
+buttons may share a command group, a status group, or the same command/status
+pair. A command address must still differ from the status address on each
+button, and malformed or out-of-range values are rejected.
 
-Enabling a button does not enable KNX transmission in this alpha release. The
-application and transport authorization guards remain blocked independently of
-persistent configuration.
+When active buttons share a status group, one valid status telegram updates
+all of their independent state models. Disabled buttons do not subscribe to
+status updates.
+
+Enabling a button and enabling KNX transmission remain separate actions.
+ACTIVE requires a deliberate Web action and is stored; it is restored after
+restart only when multicast is operational. The page provides an immediate
+return to persistent PASSIVE. Activation is refused unless multicast is
+operational and at least one button is enabled.
 
 ## Persistence
 

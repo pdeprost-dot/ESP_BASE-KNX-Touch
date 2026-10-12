@@ -72,6 +72,10 @@ class KNXTransport {
   const char* modeName() const;
   const Statistics& statistics() const;
   uint32_t synchronizationEpoch() const;
+  bool applicationNetworkOperational() const;
+  bool setApplicationTransmitEnabled(bool enabled,
+                                     const uint16_t* authorizedWriteAddresses = nullptr,
+                                     size_t count = 0);
   void setKnownDpt1Addresses(const uint16_t* addresses, size_t count);
   bool sendGroupValueWriteDpt1(uint16_t groupAddress, bool value);
   bool sendGroupValueRead(uint16_t groupAddress);
@@ -94,6 +98,7 @@ class KNXTransport {
  private:
   static constexpr size_t kMaxPacketSize = 256;
   static constexpr size_t kMaxKnownDpt1 = 16;
+  static constexpr size_t kMaxAuthorizedWrites = 4;
 
   void setState(KnxTransportState state, const char* reason);
   void startConnection();
@@ -102,13 +107,15 @@ class KNXTransport {
   void sendConnectionStateRequest();
   void sendDisconnectRequest();
   void sendTunnelingAck(uint8_t channel, uint8_t sequence, IPAddress ip, uint16_t port);
-  bool sendPacket(const uint8_t* data, size_t length, IPAddress ip, uint16_t port);
+  bool sendPacket(const uint8_t* data, size_t length, IPAddress ip, uint16_t port,
+                  size_t* bytesWritten = nullptr);
   void receivePackets();
   void handlePacket(const uint8_t* data, size_t length, IPAddress remoteIp,
                     uint16_t remotePort);
   void handleCemi(const uint8_t* data, size_t length);
   bool isKnownDpt1(uint16_t groupAddress) const;
   bool transmitAuthorized(uint16_t groupAddress, KnxApci apci);
+  bool isAuthorizedWriteAddress(uint16_t groupAddress) const;
   bool sendRoutingGroup(uint16_t groupAddress, KnxApci apci, bool value);
 
   Config config_;
@@ -130,7 +137,8 @@ class KNXTransport {
   uint8_t packet_[kMaxPacketSize]{};
   Statistics statistics_{};
   uint8_t ignoredServiceLogs_ = 0;
-  bool transmissionConsumed_ = false;
+  uint16_t authorizedWriteAddresses_[kMaxAuthorizedWrites]{};
+  size_t authorizedWriteAddressCount_ = 0;
   MulticastLifecycle multicastLifecycle_;
   uint32_t synchronizationEpoch_ = 0;
 };

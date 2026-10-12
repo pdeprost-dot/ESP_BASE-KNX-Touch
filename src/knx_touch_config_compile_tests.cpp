@@ -33,14 +33,33 @@ bool configTests() {
       KnxTouchConfigStore::parseGroupAddress("0/0/0", address)) return false;
   KnxTouchConfigData value = KnxTouchConfigStore::defaults();
   if (!KnxTouchConfigStore::validate(value)) return false;
+  value.general.operatingMode = KnxOperatingMode::Active;
+  KnxTouchConfigStore::finalize(value);
+  if (!KnxTouchConfigStore::validate(value)) return false;
+  value.general.operatingMode = static_cast<KnxOperatingMode>(3);
+  KnxTouchConfigStore::finalize(value);
+  if (KnxTouchConfigStore::validate(value)) return false;
+  value = KnxTouchConfigStore::defaults();
   if (value.buttons[0].commandAddress == value.buttons[1].commandAddress) return false;
   value.buttons[2].statusAddress = value.buttons[2].commandAddress;
   KnxTouchConfigStore::finalize(value);
   if (KnxTouchConfigStore::validate(value)) return false;
   value = KnxTouchConfigStore::defaults();
   value.buttons[3].statusAddress = value.buttons[1].statusAddress;
+  value.buttons[3].commandAddress = value.buttons[1].commandAddress;
   KnxTouchConfigStore::finalize(value);
-  if (KnxTouchConfigStore::validate(value)) return false;
+  if (!KnxTouchConfigStore::validate(value)) return false;
+  KnxTouchConfigData reloaded{};
+  memcpy(&reloaded, &value, sizeof(value));
+  if (!KnxTouchConfigStore::validate(reloaded) ||
+      reloaded.buttons[3].commandAddress != reloaded.buttons[1].commandAddress ||
+      reloaded.buttons[3].statusAddress != reloaded.buttons[1].statusAddress) return false;
+  for (size_t index = 0; index < 4; ++index) {
+    value.buttons[index].commandAddress = 0x1000;
+    value.buttons[index].statusAddress = 0x1100;
+  }
+  KnxTouchConfigStore::finalize(value);
+  if (!KnxTouchConfigStore::validate(value)) return false;
   value = KnxTouchConfigStore::defaults();
   value.checksum ^= 1;
   if (KnxTouchConfigStore::validate(value)) return false;

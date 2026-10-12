@@ -13,7 +13,7 @@ struct KnxTouchButtonConfig {
 
 enum class KnxConfiguredTransport : uint8_t { Routing = 1 };
 enum class KnxSynchronizationMode : uint8_t { Passive = 1 };
-enum class KnxOperatingMode : uint8_t { Passive = 1 };
+enum class KnxOperatingMode : uint8_t { Passive = 1, Active = 2 };
 
 struct KnxGeneralConfig {
   uint16_t individualAddress = 0;
@@ -44,6 +44,7 @@ class KnxTouchConfigStore {
   bool begin();
   bool load();
   bool save(const KnxTouchConfigData& candidate);
+  bool saveOperatingMode(KnxOperatingMode mode);
   const KnxTouchConfigData& data() const { return data_; }
 
   static KnxTouchConfigData defaults();

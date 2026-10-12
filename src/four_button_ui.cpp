@@ -17,7 +17,7 @@ constexpr uint32_t kLongPressMs = 800;
 bool FourButtonUi::begin(LcdDriver& lcd) {
   lcd_ = &lcd;
   renderAll();
-  Serial.println("[UI][READY] four independent KNX models; transmit=BLOCKED");
+  Serial.println("[UI][READY] four independent KNX models; runtime mode managed by Web configuration");
   return true;
 }
 

@@ -161,17 +161,13 @@ bool KnxTouchConfigStore::validate(const KnxTouchConfigData& value) {
       general.feedbackTimeoutMs < 1000 || general.feedbackTimeoutMs > 60000 ||
       general.transport != KnxConfiguredTransport::Routing ||
       general.synchronization != KnxSynchronizationMode::Passive ||
-      general.operatingMode != KnxOperatingMode::Passive || general.reserved != 0) return false;
+      (general.operatingMode != KnxOperatingMode::Passive &&
+       general.operatingMode != KnxOperatingMode::Active) ||
+      general.reserved != 0) return false;
   for (const auto& button : value.buttons) {
     if (!validName(button.name) || button.enabled > 1 ||
         button.commandAddress == 0 || button.statusAddress == 0 ||
         button.commandAddress == button.statusAddress) return false;
-  }
-  for (size_t left = 0; left < 4; ++left) {
-    for (size_t right = left + 1; right < 4; ++right) {
-      if (value.buttons[left].commandAddress == value.buttons[right].commandAddress ||
-          value.buttons[left].statusAddress == value.buttons[right].statusAddress) return false;
-    }
   }
   return true;
 }
@@ -218,5 +214,15 @@ bool KnxTouchConfigStore::save(const KnxTouchConfigData& candidate) {
   if (written != sizeof(candidate)) return false;
   data_ = candidate;
   return true;
+}
+
+bool KnxTouchConfigStore::saveOperatingMode(KnxOperatingMode mode) {
+  if (mode != KnxOperatingMode::Passive && mode != KnxOperatingMode::Active) {
+    return false;
+  }
+  KnxTouchConfigData candidate = data_;
+  candidate.general.operatingMode = mode;
+  finalize(candidate);
+  return save(candidate);
 }
 

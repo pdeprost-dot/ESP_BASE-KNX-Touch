@@ -1,10 +1,10 @@
-# v0.1.0-alpha release notes (draft)
+# v0.2.0-alpha release notes
 
 ## Summary
 
-First public alpha of a four-button KNX/IP touch panel based on ESP_BASE 2.4.1.
-It combines a validated LCD/touch interface, passive KNXnet/IP Routing status
-reception, and persistent web configuration.
+Operational alpha of the four-button KNX/IP touch panel based on ESP_BASE
+2.4.1. It adds persistent ACTIVE/PASSIVE selection and validated successive
+ON/OFF control while retaining authoritative KNX status feedback.
 
 ## Compatible hardware
 
@@ -21,14 +21,23 @@ through ESP_BASE, then review the KNX settings on **KNX / Touches**.
 
 No precompiled firmware asset is included in this alpha.
 
+## Highlights
+
+- Four independently enabled and configured touch buttons.
+- Persistent Web-selectable ACTIVE mode with immediate PASSIVE fallback.
+- DPT 1.001 ON/OFF writes over KNXnet/IP Routing.
+- UNKNOWN, ON, OFF, and PENDING states confirmed only by configured status
+  telegrams.
+- Shared status groups update every matching enabled button.
+- Safe restoration after restart and Wi-Fi reconnection without automatic
+  commands or retries.
+
 ## Important limitations
 
-- Permanent ACTIVE command mode is not enabled or validated.
-- The public firmware is receive-only and keeps application transmission
-  blocked.
 - Tunneling is not selectable.
+- `GroupValueRead` is not emitted; initial synchronization is passive.
 - This is not an ETS product database and cannot program KNX participants.
 - Multicast delivery depends on the local network's multicast/IGMP behavior.
 
-Review and assign a unique KNX individual address and group addresses before
-any future authorized ACTIVE-mode testing.
+Review and assign a unique KNX individual address and correct command/status
+groups before enabling ACTIVE mode.
